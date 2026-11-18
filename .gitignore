@@ -1,0 +1,9 @@
+node_modules/
+dist/
+# 악보 파일은 저작권 때문에 저장소에 올리지 않습니다
+samples/
+*.mscz
+*.mscx
+!tests/fixtures/*.mscx
+# MuseScore 반복 규칙 테스트 데이터 (scripts/fetch-musescore-tests.sh 로 받음)
+vendor/

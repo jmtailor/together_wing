@@ -1,0 +1,25 @@
+{
+  "name": "together-wing",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "description": "워십팀 보컬 화음 연습용 악보 툴 (MuseScore .mscz 직접 읽기)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "report": "tsx scripts/report.ts"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.9.8",
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3",
+    "vite": "^7.1.12",
+    "vitest": "^3.2.4"
+  }
+}
