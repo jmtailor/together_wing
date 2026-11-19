@@ -8,7 +8,16 @@ export interface Lyric {
   syllabic?: 'single' | 'begin' | 'middle' | 'end';
 }
 
-export interface NoteEvent {
+/** 악보에 적힌 음표 모양 (그리기용) */
+export interface Notation {
+  /** whole, half, quarter, eighth, 16th, ..., measure(온마디 쉼표) */
+  durationType: string;
+  dots: number;
+  /** 잇단음표 (예: 셋잇단 = actual 3, normal 2) */
+  tuplet?: { actual: number; normal: number; id: number };
+}
+
+export interface NoteEvent extends Notation {
   /** 악보 기준 절대 tick (반복 전개 전) */
   tick: Ticks;
   duration: Ticks;
@@ -18,13 +27,19 @@ export interface NoteEvent {
   measure: number;
   staff: number;
   voice: number;
+  /** 음 이름 표기용 Tonal Pitch Class (14=C, 21=C#, 12=Bb ...) */
+  tpc?: number;
+  /** 같은 화음(Chord) 음표끼리 같은 값 */
+  chordId: number;
+  /** 기둥 방향 고정 (MuseScore에서 지정한 경우) */
+  stemDirection?: 'up' | 'down';
   tieToNext: boolean;
   tieFromPrev: boolean;
   /** 같은 화음(Chord) 안에서 첫 음표에만 가사를 붙인다 */
   lyrics: Lyric[];
 }
 
-export interface RestEvent {
+export interface RestEvent extends Notation {
   tick: Ticks;
   duration: Ticks;
   measure: number;
@@ -79,6 +94,8 @@ export interface MeasureInfo {
   markers: Marker[];
   sectionBreak: boolean;
   lineBreak: boolean;
+  /** 마디 끝 세로줄 종류 (double, end, ...). 없으면 보통 세로줄 */
+  endBarLine?: string;
   /** 화면에 표시되는 마디 번호 (MuseScore 기준, 1부터) */
   number: number;
 }
@@ -103,6 +120,8 @@ export interface Score {
   programVersion: string;
   division: Ticks;
   parts: Part[];
+  /** 보표별 음자리표 (MuseScore 표기: G, F, G8vb, C3, C4 ...) */
+  staffClefs: string[];
   measures: MeasureInfo[];
   voltas: Volta[];
   tempos: TempoChange[];

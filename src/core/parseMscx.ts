@@ -40,6 +40,7 @@ interface ScoreContext {
   division: number;
   wholeTicks: number;
   warnings: string[];
+  idCounter: number;
 }
 
 function durationTicks(el: XEl, ctx: ScoreContext, measureLen: number): number {
@@ -122,6 +123,8 @@ function readMeasures(firstStaff: XEl, ctx: ScoreContext): { measures: MeasureIn
       };
     });
     const breaks = kids(mEl, 'LayoutBreak').map((b) => childText(b, 'subtype') ?? '');
+    let endBarLine: string | undefined;
+    for (const v of voices) for (const bl of kids(v, 'BarLine')) endBarLine = childText(bl, 'subtype') ?? endBarLine;
 
     measures.push({
       index,
@@ -135,6 +138,7 @@ function readMeasures(firstStaff: XEl, ctx: ScoreContext): { measures: MeasureIn
       markers,
       sectionBreak: breaks.includes('section') || sectionBreakAfter.has(index),
       lineBreak: breaks.includes('line'),
+      endBarLine,
       number: irregular ? Math.max(number, 1) : number,
     });
 
@@ -205,8 +209,8 @@ function readStaff(staffEl: XEl, staffIdx: number, measures: MeasureInfo[], ctx:
     if (!m) return;
     kids(mEl, 'voice').forEach((v, voiceIdx) => {
       let cursor = 0;
-      const tupletStack: number[] = [];
-      const tupletById = new Map<string, number>();
+      const tupletStack: { actual: number; normal: number; id: number }[] = [];
+      const tupletById = new Map<string, { actual: number; normal: number; id: number }>();
       for (const c of kids(v)) {
         switch (c.nodeName) {
           case 'location':
@@ -215,10 +219,10 @@ function readStaff(staffEl: XEl, staffIdx: number, measures: MeasureInfo[], ctx:
           case 'Tuplet': {
             const normal = childNum(c, 'normalNotes') ?? 1;
             const actual = childNum(c, 'actualNotes') ?? 1;
-            const ratio = normal / actual;
+            const t = { actual, normal, id: ++ctx.idCounter };
             const id = c.getAttribute('id');
-            if (id) tupletById.set(id, ratio); // MuseScore 3 형식
-            else tupletStack.push(ratio); // MuseScore 4 형식: endTuplet 까지
+            if (id) tupletById.set(id, t); // MuseScore 3 형식
+            else tupletStack.push(t); // MuseScore 4 형식: endTuplet 까지
             break;
           }
           case 'endTuplet':
@@ -243,22 +247,30 @@ function readStaff(staffEl: XEl, staffIdx: number, measures: MeasureInfo[], ctx:
           case 'Rest': {
             const isGrace = GRACE_TAGS.some((g) => has(c, g));
             let dur = durationTicks(c, ctx, m.length);
-            for (const r of tupletStack) dur = Math.round(dur * r);
+            for (const r of tupletStack) dur = Math.round((dur * r.normal) / r.actual);
             const tRef = childText(c, 'Tuplet');
-            if (tRef && tupletById.has(tRef)) dur = Math.round(dur * tupletById.get(tRef)!);
+            const oldTuplet = tRef ? tupletById.get(tRef) : undefined;
+            if (oldTuplet) dur = Math.round((dur * oldTuplet.normal) / oldTuplet.actual);
+            const notation = {
+              durationType: childText(c, 'durationType') ?? 'quarter',
+              dots: childNum(c, 'dots') ?? 0,
+              tuplet: tupletStack[tupletStack.length - 1] ?? oldTuplet,
+            };
             if (isGrace) {
               // 꾸밈음은 MVP에서 재생하지 않는다 (시간도 차지하지 않음)
               break;
             }
             const tick = m.tick + cursor;
             if (c.nodeName === 'Rest') {
-              res.rests.push({ tick, duration: dur, measure: mi, staff: staffIdx, voice: voiceIdx });
+              res.rests.push({ tick, duration: dur, measure: mi, staff: staffIdx, voice: voiceIdx, ...notation });
             } else {
               const lyrics: Lyric[] = kids(c, 'Lyrics').map((l) => ({
                 verse: childNum(l, 'no') ?? 0,
                 text: richText(kid(l, 'text')),
                 syllabic: (childText(l, 'syllabic') as Lyric['syllabic']) ?? undefined,
               }));
+              const chordId = ++ctx.idCounter;
+              const stem = childText(c, 'StemDirection');
               kids(c, 'Note').forEach((n, ni) => {
                 const pitch = childNum(n, 'pitch');
                 if (pitch === undefined) return;
@@ -273,6 +285,9 @@ function readStaff(staffEl: XEl, staffIdx: number, measures: MeasureInfo[], ctx:
                 if (has(n, 'endSpanner')) tieFromPrev = true; // 구형식
                 res.notes.push({
                   tick, duration: dur, pitch, measure: mi, staff: staffIdx, voice: voiceIdx,
+                  tpc: childNum(n, 'tpc'), chordId,
+                  stemDirection: stem === 'up' || stem === 'down' ? stem : undefined,
+                  ...notation,
                   tieToNext, tieFromPrev, lyrics: ni === 0 ? lyrics : [],
                 });
               });
@@ -296,7 +311,7 @@ export function parseMscx(text: string): Score {
   if (!scoreEl) throw new Error('악보(Score) 데이터를 찾을 수 없습니다');
 
   const division = childNum(scoreEl, 'Division') ?? 480;
-  const ctx: ScoreContext = { division, wholeTicks: division * 4, warnings: [] };
+  const ctx: ScoreContext = { division, wholeTicks: division * 4, warnings: [], idCounter: 0 };
 
   const meta = new Map<string, string>();
   for (const mt of kids(scoreEl, 'metaTag')) meta.set(mt.getAttribute('name') ?? '', mt.textContent ?? '');
@@ -319,6 +334,16 @@ export function parseMscx(text: string): Score {
   const staffEls = kids(scoreEl, 'Staff');
   if (staffEls.length === 0) throw new Error('악보에 보표가 없습니다');
   const { measures, voltas } = readMeasures(staffEls[0], ctx);
+
+  const staffClefs = staffEls.map((s) => {
+    for (const mEl of kids(s, 'Measure')) {
+      for (const v of kids(mEl, 'voice')) {
+        const clef = kid(v, 'Clef');
+        if (clef) return (childText(clef, 'concertClefType') ?? childText(clef, 'subtype') ?? 'G').trim();
+      }
+    }
+    return 'G';
+  });
 
   const notes: NoteEvent[] = [];
   const rests: RestEvent[] = [];
@@ -345,6 +370,7 @@ export function parseMscx(text: string): Score {
     programVersion: childText(root, 'programVersion') ?? '',
     division,
     parts,
+    staffClefs,
     measures,
     voltas,
     tempos,
