@@ -26,6 +26,20 @@ function nearestSample(pitch: number): number {
   return Math.min(SAMPLE_MAX, Math.max(SAMPLE_MIN, cand));
 }
 
+/** 짧은 사인파 딸깍 소리 (잡음 없이 부드럽게 시작해 빨리 사라짐) */
+function makeClick(ctx: BaseAudioContext, freq: number, gain: number): AudioBuffer {
+  const len = Math.round(ctx.sampleRate * 0.05);
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  const attack = ctx.sampleRate * 0.0015;
+  for (let i = 0; i < len; i++) {
+    const t = i / ctx.sampleRate;
+    const env = Math.min(1, i / attack) * Math.exp(-t * 90);
+    d[i] = gain * env * Math.sin(2 * Math.PI * freq * t);
+  }
+  return buf;
+}
+
 export interface ChannelState {
   name: string;
   staves: number[];
@@ -43,7 +57,7 @@ export class Player {
   private master: GainNode | null = null;
   private gains: GainNode[] = [];
   private buffers = new Map<number, AudioBuffer>();
-  private sources: AudioBufferSourceNode[] = [];
+  private sources = new Set<AudioBufferSourceNode>();
   private staffToChannel = new Map<number, number>();
   private startCtxTime = 0;
   private startPos = 0;
@@ -61,9 +75,16 @@ export class Player {
   countIn = true;
   private metroGain: GainNode | null = null;
   private countGain: GainNode | null = null;
-  private oscillators: OscillatorNode[] = [];
+  /** 메트로놈 딸깍 소리 (첫 박 / 나머지 박), 미리 만들어 둔 짧은 소리 */
+  private clickBufs: [AudioBuffer, AudioBuffer] | null = null;
+  /** 박마다 메트로놈 시각 (원래 템포 기준 초) */
+  private beats: { time: number; accent: boolean }[] = [];
+  /** 조금씩 앞당겨 예약하는 스케줄러 상태 */
+  private sched: { to: number; ctxStart: number; from: number; ni: number; bi: number } | null = null;
+  private pumpTimer: number | undefined;
 
   private score: Score;
+  private warmedUp = false;
 
   constructor(original: Score) {
     // 코드 기호가 있으면 '코드 반주' 파트를 가상 보표로 덧붙인다
@@ -74,6 +95,10 @@ export class Player {
     this.channels = original.parts.map((p) => ({ name: p.name, staves: p.staves, volume: 0.8, muted: false, solo: false }));
     if (acc.length) this.channels.push({ name: '반주', staves: [accStaff], volume: 0.45, muted: false, solo: false });
     this.channels.forEach((c, i) => c.staves.forEach((st) => this.staffToChannel.set(st, i)));
+    for (const pm of this.timeline.measures) {
+      const n = Math.max(1, this.score.measures[pm.measure].timeSig.n);
+      for (let k = 0; k < n; k++) this.beats.push({ time: pm.time + (k * pm.duration) / n, accent: k === 0 });
+    }
   }
 
   get duration() {
@@ -111,9 +136,10 @@ export class Player {
       this.metroGain.connect(this.master);
       this.countGain = this.ctx.createGain();
       this.countGain.connect(this.master);
+      this.clickBufs = [makeClick(this.ctx, 1600, 0.9), makeClick(this.ctx, 1050, 0.6)];
       this.applyMix();
     }
-    if (this.ctx.state === 'suspended') await this.ctx.resume();
+    if (this.ctx.state !== 'running') await this.ctx.resume();
     const needed = [...new Set(this.score.notes.map((n) => nearestSample(n.pitch)))].filter((p) => !this.buffers.has(p));
     let done = 0;
     await Promise.all(
@@ -157,7 +183,9 @@ export class Player {
     if (this.loop && (this.pos < this.loop.start || this.pos >= this.loop.end)) this.pos = this.loop.start;
     this.playing = true;
     this.startPos = this.pos;
-    let lead = 0.06;
+    // 처음 켤 때는 오디오 장치가 깨어날 시간을 조금 더 준다
+    let lead = this.warmedUp ? 0.08 : 0.3;
+    this.warmedUp = true;
     if (withCountIn) {
       const beat = this.beatSeconds(this.pos) / this.rate;
       for (let k = 0; k < 4; k++) this.click(this.ctx.currentTime + lead + k * beat, k === 0, this.countGain!);
@@ -168,33 +196,60 @@ export class Player {
     this.emit();
   }
 
-  /** 메트로놈 딸깍 소리 (첫 박은 높고 크게) */
+  /** 메트로놈 딸깍 소리 (첫 박은 높게) */
   private click(when: number, accent: boolean, out: GainNode) {
-    const ctx = this.ctx!;
-    const osc = ctx.createOscillator();
-    osc.type = 'square';
-    osc.frequency.value = accent ? 1760 : 1180;
-    const env = ctx.createGain();
-    const peak = accent ? 0.5 : 0.32;
-    env.gain.setValueAtTime(0, when);
-    env.gain.linearRampToValueAtTime(peak, when + 0.002);
-    env.gain.exponentialRampToValueAtTime(0.001, when + 0.06);
-    osc.connect(env).connect(out);
-    osc.start(when);
-    osc.stop(when + 0.08);
-    this.oscillators.push(osc);
+    const src = this.ctx!.createBufferSource();
+    src.buffer = this.clickBufs![accent ? 0 : 1];
+    src.connect(out);
+    src.start(when);
+    this.track(src);
   }
 
+  private track(src: AudioBufferSourceNode) {
+    this.sources.add(src);
+    src.onended = () => this.sources.delete(src);
+  }
+
+  /**
+   * 재생 예약. 곡 전체를 한 번에 예약하면 시작할 때 버벅이므로
+   * 앞으로 몇 초 분량만 예약하고, 타이머로 조금씩 이어서 예약한다.
+   */
   private schedule(from: number, to: number, ctxStart: number) {
-    const ctx = this.ctx!;
-    for (const n of this.timeline.notes) {
-      if (n.time < from - 1e-6 || n.time >= to - 1e-6) continue;
+    const lower = (arr: { time: number }[], t: number) => {
+      let lo = 0;
+      let hi = arr.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (arr[mid].time < t - 1e-6) lo = mid + 1;
+        else hi = mid;
+      }
+      return lo;
+    };
+    this.sched = { from, to, ctxStart, ni: lower(this.timeline.notes, from), bi: lower(this.beats, from) };
+    this.pump();
+    window.clearInterval(this.pumpTimer);
+    this.pumpTimer = window.setInterval(() => this.pump(), 250);
+    const endIn = (to - from) / this.rate + (ctxStart - this.ctx!.currentTime);
+    window.clearTimeout(this.endTimer);
+    this.endTimer = window.setTimeout(() => this.reachedEnd(), Math.max(0, endIn * 1000));
+  }
+
+  private pump() {
+    const sc = this.sched;
+    if (!sc || !this.ctx) return;
+    const ctx = this.ctx;
+    // 지금부터 3초 뒤까지 (원래 템포 기준 위치로 바꿔서)
+    const until = Math.min(sc.to, sc.from + (ctx.currentTime + 3 - sc.ctxStart) * this.rate);
+    const notes = this.timeline.notes;
+    for (; sc.ni < notes.length && notes[sc.ni].time < until - 1e-6; sc.ni++) {
+      const n = notes[sc.ni];
+      if (n.time >= sc.to - 1e-6) break;
       const ch = this.staffToChannel.get(n.staff) ?? 0;
       const sp = nearestSample(n.pitch);
       const buf = this.buffers.get(sp);
       if (!buf) continue;
-      const when = ctxStart + (n.time - from) / this.rate;
-      const dur = Math.max(0.05, Math.min(n.duration, to - n.time) / this.rate);
+      const when = Math.max(ctx.currentTime, sc.ctxStart + (n.time - sc.from) / this.rate);
+      const dur = Math.max(0.05, Math.min(n.duration, sc.to - n.time) / this.rate);
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.playbackRate.value = 2 ** ((n.pitch - sp) / 12);
@@ -206,21 +261,15 @@ export class Player {
       src.connect(env).connect(this.gains[ch]);
       src.start(when);
       src.stop(when + dur + 0.3);
-      this.sources.push(src);
+      this.track(src);
     }
-    // 메트로놈: 펼친 마디마다 박자표대로 (첫 박 강세)
-    for (const pm of this.timeline.measures) {
-      if (pm.time + pm.duration <= from + 1e-6 || pm.time >= to - 1e-6) continue;
-      const n = Math.max(1, this.score.measures[pm.measure].timeSig.n);
-      for (let k = 0; k < n; k++) {
-        const t = pm.time + (k * pm.duration) / n;
-        if (t < from - 1e-6 || t >= to - 1e-6) continue;
-        this.click(ctxStart + (t - from) / this.rate, k === 0, this.metroGain!);
-      }
+    for (; sc.bi < this.beats.length && this.beats[sc.bi].time < until - 1e-6; sc.bi++) {
+      const bt = this.beats[sc.bi];
+      if (bt.time >= sc.to - 1e-6) break;
+      const when = sc.ctxStart + (bt.time - sc.from) / this.rate;
+      if (when < ctx.currentTime) continue;
+      this.click(when, bt.accent, this.metroGain!);
     }
-    const endIn = (to - from) / this.rate + (ctxStart - ctx.currentTime);
-    window.clearTimeout(this.endTimer);
-    this.endTimer = window.setTimeout(() => this.reachedEnd(), Math.max(0, endIn * 1000));
   }
 
   private reachedEnd() {
@@ -241,22 +290,17 @@ export class Player {
 
   private stopSources() {
     window.clearTimeout(this.endTimer);
-    for (const s of this.sources) {
+    window.clearInterval(this.pumpTimer);
+    this.sched = null;
+    for (const src of this.sources) {
+      src.onended = null;
       try {
-        s.stop();
+        src.stop();
       } catch {
         /* 이미 멈춤 */
       }
     }
-    this.sources = [];
-    for (const o of this.oscillators) {
-      try {
-        o.stop();
-      } catch {
-        /* 이미 멈춤 */
-      }
-    }
-    this.oscillators = [];
+    this.sources.clear();
   }
 
   pause() {
