@@ -55,6 +55,13 @@ export class Player {
   /** 구간 반복 [시작, 끝) 초. 없으면 끝까지 */
   loop: { start: number; end: number } | null = null;
   private listeners = new Set<Listener>();
+  /** 메트로놈: 켜기/끄기, 음량(0..1) */
+  metronome = { on: true, volume: 0.6 };
+  /** 재생을 시작할 때 4박 카운트 */
+  countIn = true;
+  private metroGain: GainNode | null = null;
+  private countGain: GainNode | null = null;
+  private oscillators: OscillatorNode[] = [];
 
   private score: Score;
 
@@ -100,6 +107,10 @@ export class Player {
         g.connect(this.master!);
         return g;
       });
+      this.metroGain = this.ctx.createGain();
+      this.metroGain.connect(this.master);
+      this.countGain = this.ctx.createGain();
+      this.countGain.connect(this.master);
       this.applyMix();
     }
     if (this.ctx.state === 'suspended') await this.ctx.resume();
@@ -119,18 +130,59 @@ export class Player {
   /** 지금 위치(초, 악보 템포 기준) */
   position(): number {
     if (!this.playing || !this.ctx) return this.pos;
-    return this.startPos + (this.ctx.currentTime - this.startCtxTime) * this.rate;
+    // 카운트 중에는 시작 위치에 머문다
+    return this.startPos + Math.max(0, this.ctx.currentTime - this.startCtxTime) * this.rate;
   }
 
-  play() {
+  /** 카운트 중이면 남은 박 수 (4,3,2,1), 아니면 0 */
+  countdown(): number {
+    if (!this.playing || !this.ctx || this.ctx.currentTime >= this.startCtxTime) return 0;
+    const beat = this.beatSeconds(this.startPos) / this.rate;
+    return Math.min(4, Math.ceil((this.startCtxTime - this.ctx.currentTime) / beat));
+  }
+
+  /** 위치 t(초)가 들어 있는 마디의 한 박 길이(초, 원래 템포 기준) */
+  private beatSeconds(t: number): number {
+    const ms = this.timeline.measures;
+    let pm = ms[0];
+    for (const x of ms) if (x.time <= t + 1e-6) pm = x;
+    if (!pm) return 0.5;
+    const sig = this.score.measures[pm.measure].timeSig;
+    return pm.duration / Math.max(1, sig.n);
+  }
+
+  play(withCountIn = this.countIn) {
     if (!this.ctx || this.playing) return;
     if (this.pos >= this.duration - 0.01) this.pos = 0;
     if (this.loop && (this.pos < this.loop.start || this.pos >= this.loop.end)) this.pos = this.loop.start;
     this.playing = true;
     this.startPos = this.pos;
-    this.startCtxTime = this.ctx.currentTime + 0.06;
+    let lead = 0.06;
+    if (withCountIn) {
+      const beat = this.beatSeconds(this.pos) / this.rate;
+      for (let k = 0; k < 4; k++) this.click(this.ctx.currentTime + lead + k * beat, k === 0, this.countGain!);
+      lead += 4 * beat;
+    }
+    this.startCtxTime = this.ctx.currentTime + lead;
     this.schedule(this.pos, this.loop ? this.loop.end : this.duration, this.startCtxTime);
     this.emit();
+  }
+
+  /** 메트로놈 딸깍 소리 (첫 박은 높고 크게) */
+  private click(when: number, accent: boolean, out: GainNode) {
+    const ctx = this.ctx!;
+    const osc = ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.value = accent ? 1760 : 1180;
+    const env = ctx.createGain();
+    const peak = accent ? 0.5 : 0.32;
+    env.gain.setValueAtTime(0, when);
+    env.gain.linearRampToValueAtTime(peak, when + 0.002);
+    env.gain.exponentialRampToValueAtTime(0.001, when + 0.06);
+    osc.connect(env).connect(out);
+    osc.start(when);
+    osc.stop(when + 0.08);
+    this.oscillators.push(osc);
   }
 
   private schedule(from: number, to: number, ctxStart: number) {
@@ -156,6 +208,16 @@ export class Player {
       src.stop(when + dur + 0.3);
       this.sources.push(src);
     }
+    // 메트로놈: 펼친 마디마다 박자표대로 (첫 박 강세)
+    for (const pm of this.timeline.measures) {
+      if (pm.time + pm.duration <= from + 1e-6 || pm.time >= to - 1e-6) continue;
+      const n = Math.max(1, this.score.measures[pm.measure].timeSig.n);
+      for (let k = 0; k < n; k++) {
+        const t = pm.time + (k * pm.duration) / n;
+        if (t < from - 1e-6 || t >= to - 1e-6) continue;
+        this.click(ctxStart + (t - from) / this.rate, k === 0, this.metroGain!);
+      }
+    }
     const endIn = (to - from) / this.rate + (ctxStart - ctx.currentTime);
     window.clearTimeout(this.endTimer);
     this.endTimer = window.setTimeout(() => this.reachedEnd(), Math.max(0, endIn * 1000));
@@ -168,7 +230,7 @@ export class Player {
       this.stopSources();
       this.pos = this.loop.start;
       this.playing = false;
-      this.play();
+      this.play(false);
       return;
     }
     this.stopSources();
@@ -187,6 +249,14 @@ export class Player {
       }
     }
     this.sources = [];
+    for (const o of this.oscillators) {
+      try {
+        o.stop();
+      } catch {
+        /* 이미 멈춤 */
+      }
+    }
+    this.oscillators = [];
   }
 
   pause() {
@@ -207,7 +277,7 @@ export class Player {
     const wasPlaying = this.playing;
     if (wasPlaying) this.pause();
     this.pos = Math.max(0, Math.min(this.duration, seconds));
-    if (wasPlaying) this.play();
+    if (wasPlaying) this.play(false);
     this.emit();
   }
 
@@ -215,7 +285,7 @@ export class Player {
     const wasPlaying = this.playing;
     if (wasPlaying) this.pause();
     this.rate = rate;
-    if (wasPlaying) this.play();
+    if (wasPlaying) this.play(false);
     this.emit();
   }
 
@@ -224,7 +294,7 @@ export class Player {
     if (wasPlaying) this.pause();
     this.loop = loop;
     if (loop) this.pos = loop.start;
-    if (wasPlaying) this.play();
+    if (wasPlaying) this.play(false);
     this.emit();
   }
 
@@ -237,6 +307,12 @@ export class Player {
       const g = this.gains[i];
       if (g && this.ctx) g.gain.setTargetAtTime(v, this.ctx.currentTime, 0.02);
     });
+    if (this.ctx && this.metroGain && this.countGain) {
+      const mv = this.metronome.on ? this.metronome.volume : 0;
+      this.metroGain.gain.setTargetAtTime(mv, this.ctx.currentTime, 0.02);
+      // 카운트는 메트로놈을 꺼도 들리게 (음량만 따름, 0이면 기본값)
+      this.countGain.gain.setTargetAtTime(this.metronome.volume || 0.6, this.ctx.currentTime, 0.02);
+    }
     this.emit();
   }
 }

@@ -138,3 +138,15 @@ button[aria-pressed="true"] { background: var(--accent) !important; color: var(-
 /* 남는 높이는 추가 기능 카드가 차지 (악보 칸은 보표 4개 높이 유지) */
 .app > .extras { flex: 1 0 auto; min-height: 56px; }
 .ch button { min-width: 36px; height: 34px; font-size: .9rem; }
+
+/* 메트로놈·템포 줄 */
+.ch .mt-on, .ch .mt-ci { min-width: 52px; font-size: .82rem; white-space: nowrap; padding: 0 8px; }
+.ch .mt-on[aria-pressed="true"], .ch .mt-ci[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: transparent; }
+.ch.tempo { flex-wrap: wrap; row-gap: 6px; }
+.ch.tempo .tempo-r { min-width: 120px; }
+.ch.tempo .tempo-n { width: 4.2em; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--card2); color: var(--fg); text-align: center; font-size: 1rem; font-variant-numeric: tabular-nums; }
+.ch.tempo .tempo-v { width: 3.2em; }
+.tempo-sub { flex-basis: 100%; display: flex; align-items: center; gap: 8px; padding-left: 72px; }
+.tempo-l { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+.ch.tempo .tp-reset { font-size: .82rem; padding: 0 10px; margin-left: auto; white-space: nowrap; }
+.t-time.counting { color: var(--accent); font-weight: 700; }

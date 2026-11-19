@@ -17,6 +17,9 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
   const player = new Player(score);
   const tl = player.timeline;
   const baseBpm = Math.round(score.tempos[0]?.bpm ?? 120);
+  // 40~180 BPM, 느린 곡도 원래 템포의 200%까지 올릴 수 있게
+  const minBpm = Math.min(40, baseBpm);
+  const maxBpm = Math.max(180, baseBpm * 2);
 
   root.innerHTML = `
     <div class="mixer">
@@ -32,10 +35,23 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
         </div>`,
         )
         .join('')}
+      <div class="ch metro">
+        <span class="ch-name">메트로놈</span>
+        <button class="mt-on" aria-pressed="${player.metronome.on}" title="메트로놈 켜기/끄기">${player.metronome.on ? 'ON' : 'OFF'}</button>
+        <button class="mt-ci" aria-pressed="${player.countIn}" title="시작 전 4박 카운트">카운트</button>
+        <input class="mt-v" type="range" min="0" max="100" value="${Math.round(player.metronome.volume * 100)}" aria-label="메트로놈 음량" />
+        <span class="ch-vv mt-vv">${Math.round(player.metronome.volume * 100)}</span>
+      </div>
       <div class="ch tempo">
         <span class="ch-name">템포</span>
-        <input class="tempo-r" type="range" min="40" max="150" step="5" value="100" aria-label="재생 속도" />
-        <span class="tempo-v">100% (♩=${baseBpm})</span>
+        <button class="tp-dn" aria-label="템포 내리기">−</button>
+        <input class="tempo-r" type="range" min="${minBpm}" max="${maxBpm}" step="1" value="${baseBpm}" aria-label="재생 속도 (BPM)" />
+        <button class="tp-up" aria-label="템포 올리기">+</button>
+        <div class="tempo-sub">
+          <label class="tempo-l">♩=<input class="tempo-n" type="number" inputmode="numeric" min="${minBpm}" max="${maxBpm}" step="1" value="${baseBpm}" aria-label="BPM 직접 입력" /></label>
+          <span class="tempo-v">100%</span>
+          <button class="tp-reset" title="악보 템포로 (♩=${baseBpm})">원래대로 ${baseBpm}</button>
+        </div>
       </div>
     </div>
     <div class="transport">
@@ -133,7 +149,9 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
     const t = player.position();
     playBtn.textContent = player.playing ? '⏸' : '▶';
     playBtn.setAttribute('aria-label', player.playing ? '일시정지' : '재생');
-    timeEl.textContent = `${fmt(t / player.rate)} / ${fmt(tl.totalTime / player.rate)}`;
+    const cd = player.countdown();
+    timeEl.textContent = cd > 0 ? `카운트 ${5 - cd} …` : `${fmt(t / player.rate)} / ${fmt(tl.totalTime / player.rate)}`;
+    timeEl.classList.toggle('counting', cd > 0);
     if (document.activeElement !== seek) seek.value = String(Math.round(t * 10));
     drawCursor(t);
   }
@@ -198,11 +216,54 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
   });
 
   const tempo = $<HTMLInputElement>('.tempo-r');
+  const tempoN = $<HTMLInputElement>('.tempo-n');
   const tempoV = $<HTMLSpanElement>('.tempo-v');
-  tempo.addEventListener('input', () => {
-    tempoV.textContent = `${tempo.value}% (♩=${Math.round((baseBpm * Number(tempo.value)) / 100)})`;
+  const clampBpm = (b: number) => Math.min(maxBpm, Math.max(minBpm, Math.round(b)));
+  const showBpm = (b: number) => {
+    tempo.value = String(b);
+    if (document.activeElement !== tempoN) tempoN.value = String(b);
+    tempoV.textContent = `${Math.round((b / baseBpm) * 100)}%`;
+  };
+  const setBpm = (b: number) => {
+    const bpm = clampBpm(b);
+    showBpm(bpm);
+    tempoN.value = String(bpm);
+    if (Math.abs(player.rate - bpm / baseBpm) > 1e-9) player.setRate(bpm / baseBpm);
+  };
+  tempo.addEventListener('input', () => showBpm(Number(tempo.value)));
+  tempo.addEventListener('change', () => setBpm(Number(tempo.value)));
+  tempoN.addEventListener('change', () => {
+    const v = Number(tempoN.value);
+    setBpm(Number.isFinite(v) && tempoN.value.trim() !== '' ? v : player.rate * baseBpm);
   });
-  tempo.addEventListener('change', () => player.setRate(Number(tempo.value) / 100));
+  tempoN.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter') tempoN.blur();
+  });
+  tempoN.addEventListener('focus', () => tempoN.select());
+  $<HTMLButtonElement>('.tp-dn').addEventListener('click', () => setBpm(Math.round(player.rate * baseBpm) - 5));
+  $<HTMLButtonElement>('.tp-up').addEventListener('click', () => setBpm(Math.round(player.rate * baseBpm) + 5));
+  $<HTMLButtonElement>('.tp-reset').addEventListener('click', () => setBpm(baseBpm));
+
+  // 메트로놈: 켜기/끄기, 시작 전 카운트, 음량
+  const mtOn = $<HTMLButtonElement>('.mt-on');
+  const mtCi = $<HTMLButtonElement>('.mt-ci');
+  const mtV = $<HTMLInputElement>('.mt-v');
+  const mtVv = $<HTMLSpanElement>('.mt-vv');
+  mtOn.addEventListener('click', () => {
+    player.metronome.on = !player.metronome.on;
+    mtOn.setAttribute('aria-pressed', String(player.metronome.on));
+    mtOn.textContent = player.metronome.on ? 'ON' : 'OFF';
+    player.applyMix();
+  });
+  mtCi.addEventListener('click', () => {
+    player.countIn = !player.countIn;
+    mtCi.setAttribute('aria-pressed', String(player.countIn));
+  });
+  mtV.addEventListener('input', () => {
+    player.metronome.volume = Number(mtV.value) / 100;
+    mtVv.textContent = mtV.value;
+    player.applyMix();
+  });
 
   // 악보의 마디를 누르면 그 마디부터 (지금 위치 이후 처음 나오는 차례로)
   rendered.systems.forEach((svg, si) => {
