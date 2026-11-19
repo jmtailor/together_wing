@@ -1,5 +1,5 @@
 import type {
-  Jump, Lyric, Marker, MeasureInfo, NoteEvent, Part, RestEvent, Score, TempoChange, TextMark, Volta,
+  ChordSymbol, Jump, Lyric, Marker, MeasureInfo, NoteEvent, Part, RestEvent, Score, TempoChange, TextMark, Volta,
 } from './types';
 import { childNum, childText, has, kid, kids, parseFraction, parseXml, type XEl } from './xml';
 
@@ -190,7 +190,15 @@ function readMeasures(firstStaff: XEl, ctx: ScoreContext): { measures: MeasureIn
   return { measures, voltas };
 }
 
+/** TPC → 음 이름 (B♭, F♯ ...) */
+export function tpcName(tpc: number): string {
+  const letter = 'FCGDAEB'[(((tpc + 1) % 7) + 7) % 7];
+  const alter = Math.floor((tpc + 1) / 7) - 2;
+  return letter + (alter > 0 ? '♯'.repeat(alter) : '♭'.repeat(-alter));
+}
+
 interface StaffReadResult {
+  chords: ChordSymbol[];
   notes: NoteEvent[];
   rests: RestEvent[];
   marks: TextMark[];
@@ -199,7 +207,7 @@ interface StaffReadResult {
 
 /** 2차: 각 보표의 음표·쉼표·가사·템포를 읽는다 */
 function readStaff(staffEl: XEl, staffIdx: number, measures: MeasureInfo[], ctx: ScoreContext): StaffReadResult {
-  const res: StaffReadResult = { notes: [], rests: [], marks: [], tempos: [] };
+  const res: StaffReadResult = { chords: [], notes: [], rests: [], marks: [], tempos: [] };
   const measureEls = kids(staffEl, 'Measure');
   if (measureEls.length !== measures.length) {
     ctx.warnings.push(`보표 ${staffIdx + 1}의 마디 수(${measureEls.length})가 첫 보표(${measures.length})와 다릅니다`);
@@ -233,6 +241,18 @@ function readStaff(staffEl: XEl, staffIdx: number, measures: MeasureInfo[], ctx:
             if (t) res.tempos.push({ tick: m.tick + cursor, bpm: Math.round(t * 60 * 1000) / 1000 });
             const txt = richText(kid(c, 'text'));
             if (txt) res.marks.push({ tick: m.tick + cursor, measure: mi, kind: 'tempoText', text: txt });
+            break;
+          }
+          case 'Harmony': {
+            const info = kid(c, 'harmonyInfo') ?? c; // 구형식은 Harmony 바로 아래에 있음
+            const root = childNum(info, 'root');
+            const bass = childNum(info, 'bass');
+            const name = childText(info, 'name') ?? '';
+            const plain = richText(kid(c, 'text'));
+            const text = root !== undefined
+              ? tpcName(root) + name + (bass !== undefined ? '/' + tpcName(bass) : '')
+              : plain || name;
+            if (text) res.chords.push({ tick: m.tick + cursor, measure: mi, staff: staffIdx, root, bass, name, text });
             break;
           }
           case 'RehearsalMark':
@@ -348,11 +368,13 @@ export function parseMscx(text: string): Score {
   const notes: NoteEvent[] = [];
   const rests: RestEvent[] = [];
   const marks: TextMark[] = [];
+  const chords: ChordSymbol[] = [];
   const tempoMap = new Map<number, number>();
   staffEls.forEach((s, i) => {
     const r = readStaff(s, i, measures, ctx);
     notes.push(...r.notes);
     rests.push(...r.rests);
+    chords.push(...r.chords);
     if (i === 0) marks.push(...r.marks);
     else marks.push(...r.marks.filter((mk) => mk.kind === 'staffText'));
     for (const t of r.tempos) if (!tempoMap.has(t.tick)) tempoMap.set(t.tick, t.bpm);
@@ -377,6 +399,7 @@ export function parseMscx(text: string): Score {
     notes,
     rests,
     marks,
+    chords,
     warnings: ctx.warnings,
   };
 }

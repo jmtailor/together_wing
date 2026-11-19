@@ -12,10 +12,11 @@ import type { MeasureInfo, NoteEvent, RestEvent, Score } from '../core/types';
 const SYSTEM_WIDTH = 1000;
 const LEFT_MARGIN = 14;
 const STAFF_HEIGHT = 40; // 오선 5줄 높이 (VexFlow 기본 간격 10)
-const ABOVE_SPACE = 70; // 오선 위 여백 (리허설 마크, 괄호, 글자)
+const ABOVE_SPACE = 96; // 오선 위 여백 (리허설 마크, 괄호, 글자)
 const STAFF_GAP = 70; // 보표 사이 기본 여백
 const LYRIC_LINE = 18; // 가사 한 줄 높이
-const LYRIC_TOP = 30; // 맨 아래 줄에서 첫 가사 글자 바닥까지
+const LYRIC_TOP = 30; // 맨 아래 줄에서 첫 가사 글자 바닥까지 (기본값, 낮은 음이 있으면 더 내림)
+const CHORD_FONT = '"Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
 const LYRIC_FONT = '"Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
 
 const KEY_NAMES: Record<number, string> = {
@@ -190,11 +191,24 @@ export function renderScore(container: HTMLElement, score: Score): RenderedScore
     for (const n of score.notes) if (n.staff === st) for (const l of n.lyrics) max = Math.max(max, l.verse + 1);
     return max;
   });
+  // 보표마다 가장 낮은 음이 오선 아래로 얼마나 내려가는지 보고 가사 줄 위치를 정한다
+  const lyricTop = score.staffClefs.map((clefName, st) => {
+    const bottomLine: Record<string, number> = { treble: 30, bass: 18, alto: 24, tenor: 22, percussion: 30 };
+    const base = bottomLine[(CLEFS[clefName] ?? CLEFS.G).clef] ?? 30;
+    let lowest = base;
+    for (const n of score.notes) {
+      if (n.staff !== st) continue;
+      const [name, oct] = spellNote(n.pitch, n.tpc).split('/');
+      const idx = Number(oct) * 7 + 'cdefgab'.indexOf(name[0]);
+      lowest = Math.min(lowest, idx);
+    }
+    return LYRIC_TOP + Math.max(0, (base - lowest) * 5 - 6);
+  });
   const staffTop: number[] = [];
   let y = ABOVE_SPACE;
   for (let st = 0; st < staffCount; st++) {
     staffTop.push(y);
-    y += STAFF_HEIGHT + STAFF_GAP + (verseCount[st] ? LYRIC_TOP - 10 + verseCount[st] * LYRIC_LINE : 0);
+    y += STAFF_HEIGHT + STAFF_GAP + (verseCount[st] ? lyricTop[st] - 10 + verseCount[st] * LYRIC_LINE : 0);
   }
   const systemHeight = y - STAFF_GAP + 20;
 
@@ -261,10 +275,10 @@ export function renderScore(container: HTMLElement, score: Score): RenderedScore
             ...m.markers.map((mk) => mk.text || mk.label),
           ];
           if (texts.length) {
-            stave.addModifier(new StaveText(texts.join('\u00a0\u00a0'), ModifierPosition.ABOVE, { shiftY: volta ? -16 : -2 }));
+            stave.addModifier(new StaveText(texts.join('\u00a0\u00a0'), ModifierPosition.ABOVE, { shiftY: volta ? -38 : -22 }));
           }
           const tempo = score.tempos.find((t) => t.tick >= m.tick && t.tick < m.tick + m.length);
-          if (tempo && (mi === 0 || tempo.tick > 0)) stave.setTempo({ duration: 'q', bpm: Math.round(tempo.bpm) }, -2);
+          if (tempo && (mi === 0 || tempo.tick > 0)) stave.setTempo({ duration: 'q', bpm: Math.round(tempo.bpm) }, -24);
         }
         staves.push(stave);
       }
@@ -278,7 +292,7 @@ export function renderScore(container: HTMLElement, score: Score): RenderedScore
         ctx.setFont('Academico, "Noto Sans KR", serif', 16, 'bold');
         const w = ctx.measureText(r.text).width;
         const bx = r.stave.getX() + (r.stave === staves[0] && k === 0 ? 2 : 4);
-        const by = r.stave.getYForLine(0) - 52;
+        const by = r.stave.getYForLine(0) - 70;
         ctx.setLineWidth(1.2);
         ctx.rect(bx, by, w + 10, 22);
         ctx.stroke();
@@ -293,6 +307,7 @@ export function renderScore(container: HTMLElement, score: Score): RenderedScore
       const tuplets: Tuplet[] = [];
       const ties: StaveTie[] = [];
       const lyricQueue: { note: StaveNote; staff: number; verse: number; text: string }[] = [];
+      const placed: { staff: number; tick: number; note: StaveNote }[] = [];
       for (let st = 0; st < staffCount; st++) {
         const clef = CLEFS[score.staffClefs[st]] ?? CLEFS.G;
         const voices: Voice[] = [];
@@ -346,6 +361,7 @@ export function renderScore(container: HTMLElement, score: Score): RenderedScore
               tupletInfo.set(nt.tuplet.id, nt.tuplet);
             }
             tickables.push(note);
+            placed.push({ staff: st, tick: e.tick, note });
           }
           for (const [id, notes] of tupletGroups) {
             const t = tupletInfo.get(id)!;
@@ -375,11 +391,27 @@ export function renderScore(container: HTMLElement, score: Score): RenderedScore
       tuplets.forEach((t) => t.setContext(ctx).draw());
       ties.forEach((t) => t.setContext(ctx).draw());
 
+      // 코드 기호: 그 박자의 음표 위에, 음표가 없으면 마디 안 비율 위치에
+      ctx.save();
+      ctx.setFont(CHORD_FONT, 15, 'bold');
+      for (const ch of score.chords) {
+        if (ch.measure !== mi) continue;
+        const st = ch.staff;
+        const at = placed.find((p) => p.staff === st && p.tick === ch.tick && !p.note.isRest());
+        const ratio = (ch.tick - m.tick) / m.length;
+        const x = at
+          ? at.note.getAbsoluteX() - 2
+          : staves[st].getNoteStartX() + ratio * (staves[st].getNoteEndX() - staves[st].getNoteStartX()) + 4;
+        const yTop = staves[st].getYForLine(0) - 24 - (voltaByMeasure.has(mi) && st === 0 ? 4 : 0);
+        ctx.fillText(ch.text, x, yTop);
+      }
+      ctx.restore();
+
       // 가사: 보표 아래 일정한 줄에 음표 머리 가운데 맞춰 쓴다
       ctx.save();
       ctx.setFont(LYRIC_FONT, 14);
       for (const l of lyricQueue) {
-        const baseY = staves[l.staff].getYForLine(4) + LYRIC_TOP + l.verse * LYRIC_LINE;
+        const baseY = staves[l.staff].getYForLine(4) + lyricTop[l.staff] + l.verse * LYRIC_LINE;
         const cx = l.note.getAbsoluteX() + l.note.getGlyphWidth() / 2;
         const w = ctx.measureText(l.text).width;
         ctx.fillText(l.text, cx - w / 2, baseY);

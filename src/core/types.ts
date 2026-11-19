@@ -100,6 +100,21 @@ export interface MeasureInfo {
   number: number;
 }
 
+/** 코드 기호 (예: B♭add9/D) */
+export interface ChordSymbol {
+  tick: Ticks;
+  measure: number;
+  staff: number;
+  /** 근음 TPC */
+  root?: number;
+  /** 베이스음 TPC (분수 코드) */
+  bass?: number;
+  /** 근음 뒤에 붙는 부분 (m7, add9, sus4 ...) */
+  name: string;
+  /** 화면에 쓸 글자 */
+  text: string;
+}
+
 export interface TempoChange {
   tick: Ticks;
   bpm: number;
@@ -128,5 +143,6 @@ export interface Score {
   notes: NoteEvent[];
   rests: RestEvent[];
   marks: TextMark[];
+  chords: ChordSymbol[];
   warnings: string[];
 }
