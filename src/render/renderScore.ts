@@ -60,6 +60,11 @@ export interface MeasureBox {
   width: number;
   noteStartX: number;
   noteEndX: number;
+  /** 마디 안 박자(tick) → 가로 위치. 재생 커서가 음표를 따라가게 할 때 쓴다 */
+  ticks: { tick: number; x: number }[];
+  /** 위 칸 꼭대기·아래 칸 바닥 (가상 좌표) */
+  top: number;
+  bottom: number;
 }
 
 export interface RenderedScore {
@@ -422,7 +427,16 @@ export function renderScore(container: HTMLElement, score: Score): RenderedScore
         new StaveConnector(staves[0], staves[staffCount - 1]).setType('singleLeft').setContext(ctx).draw();
         new StaveConnector(staves[0], staves[staffCount - 1]).setType('bracket').setContext(ctx).draw();
       }
+      const tickX = new Map<number, number>();
+      for (const p of placed) {
+        const x = p.note.getAbsoluteX();
+        const prev = tickX.get(p.tick);
+        if (prev === undefined || x < prev) tickX.set(p.tick, x);
+      }
       measureBoxes[mi] = {
+        ticks: [...tickX.entries()].map(([tick, x]) => ({ tick: tick - m.tick, x })).sort((a, b) => a.tick - b.tick),
+        top: staves[0].getYForLine(0) - 10,
+        bottom: staves[staffCount - 1].getYForLine(4) + 10,
         system: si,
         x,
         width,

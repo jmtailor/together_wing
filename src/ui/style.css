@@ -28,3 +28,26 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .report { margin-top: 20px; }
 .report summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
 main { max-width: 1100px; }
+/* 연습 막대: 화면 아래 고정 */
+body { padding-bottom: 150px; }
+.practice { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line); box-shadow: 0 -2px 10px rgba(0,0,0,.08); padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); z-index: 10; }
+.practice[hidden] { display: none; }
+.transport { display: flex; align-items: center; gap: 8px; max-width: 1100px; margin: 0 auto; }
+.transport button, .ch button { min-width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); font-size: 1.05rem; cursor: pointer; }
+.transport .t-play { background: var(--accent); color: var(--bg); border: none; font-size: 1.2rem; }
+.transport .t-seek { flex: 1; min-width: 60px; }
+.t-time { font-variant-numeric: tabular-nums; font-size: .85rem; color: var(--muted); white-space: nowrap; }
+button[aria-pressed="true"] { background: var(--accent) !important; color: var(--bg) !important; }
+.ch .ch-m[aria-pressed="true"] { background: #b3261e !important; color: #fff !important; }
+.ch .ch-s[aria-pressed="true"] { background: #c9a227 !important; color: #000 !important; }
+.mixer { max-width: 1100px; margin: 0 auto 8px; display: grid; gap: 6px; }
+.mixer[hidden] { display: none; }
+.ch { display: flex; align-items: center; gap: 8px; }
+.ch-name { width: 64px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ch input[type=range] { flex: 1; }
+.ch-vv, .tempo-v { width: 3em; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: .85rem; }
+.tempo-v { width: 8.5em; }
+.t-status { text-align: center; margin: 4px 0 0; font-size: .85rem; color: var(--muted); }
+.sheet .cursor { fill: #e0457b; opacity: .85; }
+.sheet .measure-hl { fill: #e0457b; opacity: .07; }
+.sheet svg { cursor: pointer; }

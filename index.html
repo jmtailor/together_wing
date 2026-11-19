@@ -9,14 +9,15 @@
   </head>
   <body>
     <header>
-      <h1>워십밴드연습툴 <small>악보 보기 (P1 시험판)</small></h1>
-      <p>MuseScore에서 저장한 <b>.mscz</b> 파일을 열면 악보를 그려서 보여줍니다. 파일은 이 기기 안에서만 읽고 어디에도 올리지 않습니다.</p>
+      <h1>워십밴드연습툴 <small>연습 (P2 시험판)</small></h1>
+      <p>MuseScore에서 저장한 <b>.mscz</b> 파일을 열면 악보를 보여주고, 파트별로 소리를 켜고 끄며 연습할 수 있습니다. 파일은 이 기기 안에서만 읽고 어디에도 올리지 않습니다.</p>
       <label class="open">
         악보 파일 열기
         <input id="file" type="file" />
       </label>
     </header>
     <main id="out"></main>
+    <footer id="practice" class="practice" hidden></footer>
     <script type="module" src="./src/main.ts"></script>
   </body>
 </html>

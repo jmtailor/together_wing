@@ -1,11 +1,15 @@
 import { loadScore } from './core/mscz';
 import type { Score } from './core/types';
 import { renderScore } from './render/renderScore';
+import { mountPractice } from './ui/practice';
 import { scoreReport } from './report/scoreReport';
 import { renderMarkdown } from './ui/markdown';
 
 const input = document.querySelector<HTMLInputElement>('#file')!;
 const out = document.querySelector<HTMLElement>('#out')!;
+
+const practiceRoot = document.querySelector<HTMLElement>('#practice')!;
+let unmount: (() => void) | null = null;
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
@@ -19,7 +23,10 @@ async function show(name: string, score: Score) {
     <details class="report"><summary>파일 점검 결과 보기</summary><div id="report"></div></details>`;
   // 악보 글꼴(Bravura)이 준비된 뒤에 그려야 기호가 제자리에 나온다
   await document.fonts.ready;
-  renderScore(document.querySelector<HTMLElement>('#sheet')!, score);
+  const rendered = renderScore(document.querySelector<HTMLElement>('#sheet')!, score);
+  unmount?.();
+  practiceRoot.hidden = false;
+  unmount = mountPractice(practiceRoot, score, rendered);
   document.querySelector<HTMLElement>('#report')!.innerHTML = renderMarkdown(scoreReport(name, score));
 }
 
