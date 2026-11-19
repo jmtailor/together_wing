@@ -2,6 +2,8 @@ import { loadScore } from './core/mscz';
 import type { Score } from './core/types';
 import { renderScore } from './render/renderScore';
 import { mountPractice } from './ui/practice';
+import { mountSongform } from './ui/songform';
+import { initTheme } from './ui/theme';
 import { scoreReport } from './report/scoreReport';
 import { renderMarkdown } from './ui/markdown';
 
@@ -11,12 +13,13 @@ const out = $('#out');
 const titleEl = $('#title');
 const metaEl = $('#meta');
 const songformCard = $('#songform-card');
-const songform = $<HTMLTextAreaElement>('#songform');
 const refInput = metaEl.querySelector<HTMLInputElement>('[data-k="reference"]')!;
 const practiceRoot = $('#practice');
 const extras = $('#extras');
 const transportBar = $('#transport-bar');
 let unmount: (() => void) | null = null;
+let unmountSongform: (() => void) | null = null;
+initTheme($<HTMLButtonElement>('#theme'));
 let fitObserver: ResizeObserver | null = null;
 
 /** 악보 칸에 보이는 보표 수 */
@@ -24,7 +27,7 @@ const VISIBLE_STAVES = 4;
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-// 송폼·레퍼런스는 곡마다 이 기기에 저장 (악보 파일에는 쓰지 않음)
+// 레퍼런스는 곡마다 이 기기에 저장 (악보 파일에는 쓰지 않음)
 const store = {
   get(k: string) {
     try { return localStorage.getItem(k) ?? ''; } catch { return ''; }
@@ -34,7 +37,6 @@ const store = {
   },
 };
 let songKey = '';
-songform.addEventListener('input', () => songKey && store.set(`songform:${songKey}`, songform.value));
 refInput.addEventListener('input', () => songKey && store.set(`reference:${songKey}`, refInput.value));
 
 function fillInfo(name: string, score: Score) {
@@ -46,9 +48,7 @@ function fillInfo(name: string, score: Score) {
   const bpm = Math.round(score.tempos[0]?.bpm ?? 120);
   set('tempo', `♩=${bpm}`);
   refInput.value = store.get(`reference:${songKey}`) || score.reference;
-  songform.value = store.get(`songform:${songKey}`);
   metaEl.hidden = false;
-  songformCard.hidden = false;
 }
 
 /** 악보 칸 높이를 보표 4개(= 4 ÷ 보표 수 만큼의 줄)에 맞춘다 */
@@ -77,7 +77,10 @@ async function show(name: string, score: Score) {
 
   unmount?.();
   practiceRoot.hidden = false;
-  unmount = mountPractice(practiceRoot, score, rendered);
+  const practice = mountPractice(practiceRoot, score, rendered);
+  unmount = practice;
+  unmountSongform?.();
+  unmountSongform = mountSongform(songformCard, songKey, score, practice, practiceRoot);
   // 재생 막대는 화면 맨 아래에 따로 고정
   transportBar.replaceChildren(...practiceRoot.querySelectorAll('.transport, .t-status'));
   transportBar.hidden = false;

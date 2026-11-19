@@ -3,8 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#101114" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#f4f4f1" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      // 저장된 테마를 그리기 전에 먼저 적용 (깜빡임 방지)
+      try { var t = localStorage.getItem('theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
+    </script>
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -17,6 +21,7 @@
       <header class="songinfo">
         <div class="songinfo-top">
           <h1 id="title">워십밴드연습툴</h1>
+          <button id="theme" class="theme-btn" type="button" title="화면 테마 바꾸기">◐ 자동</button>
           <label class="open open-sm" title="악보 파일 열기">
             열기
             <input id="file" type="file" />
@@ -30,10 +35,7 @@
         </dl>
       </header>
 
-      <section id="songform-card" class="card songform" hidden>
-        <label for="songform" class="card-label">송폼</label>
-        <textarea id="songform" rows="2" placeholder="예: Intro - V1 - PC - C - Int - V2 - PC - C - B - C - C - Outro"></textarea>
-      </section>
+      <section id="songform-card" class="card songform" hidden></section>
 
       <main id="out" class="stage">
         <section class="empty">

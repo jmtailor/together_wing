@@ -1,8 +1,23 @@
-/* 어두운 테마 고정 */
+/* 테마: 기본은 휴대폰 설정을 따르고, html[data-theme]로 밝게/어둡게 고정 */
 :root {
+  color-scheme: light;
+  --bg: #f4f4f1; --card: #ffffff; --card2: #f0f0ec; --fg: #1d1d1f; --muted: #6a6a74; --line: #dcdcd6;
+  --accent: #2f4fd0; --accent-fg: #ffffff; --warn: #a33b20; --paper: #ffffff;
+  --score-filter: none; --chip-on: #ffcf33; --chip-on-fg: #1a1400; --chip-glow: rgba(255, 207, 51, .55);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #101114; --card: #1a1b20; --card2: #22242b; --fg: #ececf0; --muted: #9a9aa6; --line: #2e3038;
+    --accent: #8fa8ff; --accent-fg: #0d1020; --warn: #f08a6c; --paper: #17181d;
+    --score-filter: invert(1) hue-rotate(180deg); --chip-on: #ffd84d; --chip-on-fg: #1a1400; --chip-glow: rgba(255, 216, 77, .45);
+  }
+}
+:root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #101114; --card: #1a1b20; --card2: #22242b; --fg: #ececf0; --muted: #9a9aa6; --line: #2e3038;
   --accent: #8fa8ff; --accent-fg: #0d1020; --warn: #f08a6c; --paper: #17181d;
+  --score-filter: invert(1) hue-rotate(180deg); --chip-on: #ffd84d; --chip-on-fg: #1a1400; --chip-glow: rgba(255, 216, 77, .45);
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
@@ -37,12 +52,30 @@ body {
 .meta-in { width: 7.5em; background: transparent; color: var(--fg); border: none; border-bottom: 1px dashed var(--line); font: inherit; padding: 0; }
 .meta-in:focus { outline: none; border-bottom-color: var(--accent); }
 
-/* 송폼 */
-.songform textarea {
+/* 송폼: 구간 버튼, 재생 중인 구간은 밝게 */
+.card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.card-head .card-label { margin: 0; }
+.sf-edit { background: none; border: none; color: var(--muted); font: inherit; font-size: .78rem; padding: 2px 4px; cursor: pointer; }
+.sf-edit[aria-pressed="true"] { background: none !important; color: var(--accent) !important; font-weight: 700; }
+.sf-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px 1px 3px; }
+.sf-chips::-webkit-scrollbar { display: none; }
+.sf-chips[hidden] { display: none; }
+.sf-chip {
+  flex: none; height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--card2); color: var(--fg); font: 600 .85rem/1 inherit; font-family: inherit; cursor: pointer;
+  transition: background .15s, color .15s, box-shadow .15s;
+}
+.sf-chip:disabled { opacity: .45; cursor: default; }
+.sf-chip.on { background: var(--chip-on); color: var(--chip-on-fg); border-color: transparent; box-shadow: 0 0 0 2px var(--chip-glow), 0 0 12px var(--chip-glow); }
+.sf-text {
   width: 100%; resize: none; background: var(--card2); color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
   padding: 6px 8px; font: 600 .95rem/1.4 inherit; font-family: inherit;
 }
-.songform textarea:focus { outline: none; border-color: var(--accent); }
+.sf-text:focus { outline: none; border-color: var(--accent); }
+.sf-text[hidden] { display: none; }
+
+/* 테마 버튼 */
+.theme-btn { flex: none; height: 34px; padding: 0 10px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--fg); font: .82rem/1 inherit; font-family: inherit; cursor: pointer; }
 
 /* 악보 칸: 높이는 보표 4개에 맞춰 main.ts가 정함, 이 안에서만 스크롤 */
 .stage {
@@ -67,9 +100,9 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .error { color: var(--warn); font-weight: 600; padding: 16px; }
 .muted { color: var(--muted); margin-top: 0; }
 
-/* 악보: 어두운 바탕에 밝은 음표 (흰 종이 악보를 반전) */
+/* 악보: 어두운 테마에서는 흰 종이 악보를 반전해 어두운 바탕에 밝은 음표 */
 .sheet .system { width: 100%; scroll-snap-align: start; }
-.sheet svg { display: block; filter: invert(1) hue-rotate(180deg); cursor: pointer; }
+.sheet svg { display: block; filter: var(--score-filter); cursor: pointer; }
 .sheet .cursor { fill: #e0457b; opacity: .9; }
 .sheet .measure-hl { fill: #e0457b; opacity: .12; }
 .report { padding: 8px 12px 16px; border-top: 1px solid var(--line); }
