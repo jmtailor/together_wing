@@ -5,6 +5,7 @@
  * - 반복을 펼친 타임라인(timeline.ts)을 그대로 재생하므로 MuseScore 재생 순서와 같다
  */
 import type { Score } from '../core/types';
+import { accompanimentNotes } from '../core/chords';
 import { buildTimeline, type Timeline } from '../core/timeline';
 
 /** 샘플이 있는 음: 옥타브마다 C, D#, F#, A */
@@ -55,9 +56,16 @@ export class Player {
   loop: { start: number; end: number } | null = null;
   private listeners = new Set<Listener>();
 
-  constructor(private score: Score) {
-    this.timeline = buildTimeline(score);
-    this.channels = score.parts.map((p) => ({ name: p.name, staves: p.staves, volume: 0.8, muted: false, solo: false }));
+  private score: Score;
+
+  constructor(original: Score) {
+    // 코드 기호가 있으면 '코드 반주' 파트를 가상 보표로 덧붙인다
+    const accStaff = original.staffClefs.length;
+    const acc = accompanimentNotes(original, accStaff);
+    this.score = acc.length ? { ...original, notes: [...original.notes, ...acc] } : original;
+    this.timeline = buildTimeline(this.score);
+    this.channels = original.parts.map((p) => ({ name: p.name, staves: p.staves, volume: 0.8, muted: false, solo: false }));
+    if (acc.length) this.channels.push({ name: '반주', staves: [accStaff], volume: 0.45, muted: false, solo: false });
     this.channels.forEach((c, i) => c.staves.forEach((st) => this.staffToChannel.set(st, i)));
   }
 
