@@ -5,6 +5,7 @@ import { Player } from '../audio/player';
 import type { Score } from '../core/types';
 import type { RenderedScore } from '../render/renderScore';
 import type { Timeline } from '../core/timeline';
+import { createKnob, type KnobOptions } from './knob';
 
 /** 연습 화면 손잡이: 호출하면 정리, seek로 위치 이동. 위치가 바뀔 때마다 root에 'practice:time'(detail=초) 이벤트 */
 export type PracticeHandle = (() => void) & { seek(t: number): void; timeline: Timeline };
@@ -23,35 +24,40 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
 
   root.innerHTML = `
     <div class="mixer">
+      <div class="strips">
       ${player.channels
         .map(
           (c, i) => `
-        <div class="ch" data-ch="${i}">
+        <div class="strip" data-ch="${i}">
+          <div class="knob-slot"></div>
           <span class="ch-name">${esc(c.name)}</span>
-          <button class="ch-m" aria-pressed="false" title="이 파트 끄기">M</button>
-          <button class="ch-s" aria-pressed="false" title="이 파트만 듣기">S</button>
-          <input class="ch-v" type="range" min="0" max="100" value="${Math.round(c.volume * 100)}" aria-label="${esc(c.name)} 음량" />
-          <span class="ch-vv">${Math.round(c.volume * 100)}</span>
+          <div class="strip-btns">
+            <button class="ch-m" aria-pressed="false" title="이 파트 끄기">M</button>
+            <button class="ch-s" aria-pressed="false" title="이 파트만 듣기">S</button>
+          </div>
         </div>`,
         )
         .join('')}
-      <div class="ch metro">
-        <span class="ch-name">메트로놈</span>
-        <button class="mt-on" aria-pressed="${player.metronome.on}" title="메트로놈 켜기/끄기">${player.metronome.on ? 'ON' : 'OFF'}</button>
-        <button class="mt-ci" aria-pressed="${player.countIn}" title="시작 전 4박 카운트">카운트</button>
-        <input class="mt-v" type="range" min="0" max="100" value="${Math.round(player.metronome.volume * 100)}" aria-label="메트로놈 음량" />
-        <span class="ch-vv mt-vv">${Math.round(player.metronome.volume * 100)}</span>
-      </div>
-      <div class="ch tempo">
-        <span class="ch-name">템포</span>
-        <button class="tp-dn" aria-label="템포 내리기">−</button>
-        <input class="tempo-r" type="range" min="${minBpm}" max="${maxBpm}" step="1" value="${baseBpm}" aria-label="재생 속도 (BPM)" />
-        <button class="tp-up" aria-label="템포 올리기">+</button>
-        <div class="tempo-sub">
-          <label class="tempo-l">♩=<input class="tempo-n" type="number" inputmode="numeric" min="${minBpm}" max="${maxBpm}" step="1" value="${baseBpm}" aria-label="BPM 직접 입력" /></label>
-          <span class="tempo-v">100%</span>
-          <button class="tp-reset" title="악보 템포로 (♩=${baseBpm})">원래대로 ${baseBpm}</button>
+        <div class="strip metro">
+          <div class="knob-slot"></div>
+          <span class="ch-name">메트로놈</span>
+          <div class="strip-btns">
+            <button class="mt-on" aria-pressed="${player.metronome.on}" title="메트로놈 켜기/끄기">${player.metronome.on ? 'ON' : 'OFF'}</button>
+            <button class="mt-ci" aria-pressed="${player.countIn}" title="시작 전 4박 카운트">4박</button>
+          </div>
         </div>
+        <div class="strip tempo">
+          <div class="knob-slot"></div>
+          <span class="ch-name">템포</span>
+          <span class="tempo-v">100%</span>
+        </div>
+      </div>
+      <div class="tempo-row">
+        <span class="tempo-l">템포</span>
+        <button class="tp-dn" aria-label="템포 내리기">−5</button>
+        <label class="tempo-in">♩=<input class="tempo-n" type="number" inputmode="numeric" min="${minBpm}" max="${maxBpm}" step="1" value="${baseBpm}" aria-label="BPM 직접 입력" /></label>
+        <button class="tp-up" aria-label="템포 올리기">+5</button>
+        <button class="tp-reset" title="악보 템포로 (♩=${baseBpm})">원래 ${baseBpm}</button>
       </div>
     </div>
     <div class="transport">
@@ -191,13 +197,25 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
     (ev.currentTarget as HTMLElement).setAttribute('aria-pressed', String(!mixer.hidden));
   });
 
-  root.querySelectorAll<HTMLDivElement>('.ch[data-ch]').forEach((row) => {
-    const i = Number(row.dataset.ch);
-    const ch = player.channels[i];
+  // 노브는 좌우로 끌어 조절, 위아래로 쓸면 화면 스크롤 (두 번 누르면 기본값)
+  const mountKnob = (host: Element, opts: KnobOptions) => {
+    const k = createKnob(opts);
+    host.querySelector('.knob-slot')!.replaceWith(k.el);
+    return k;
+  };
+
+  root.querySelectorAll<HTMLDivElement>('.strip[data-ch]').forEach((row) => {
+    const ch = player.channels[Number(row.dataset.ch)];
     const m = row.querySelector<HTMLButtonElement>('.ch-m')!;
     const s = row.querySelector<HTMLButtonElement>('.ch-s')!;
-    const v = row.querySelector<HTMLInputElement>('.ch-v')!;
-    const vv = row.querySelector<HTMLSpanElement>('.ch-vv')!;
+    const def = Math.round(ch.volume * 100);
+    mountKnob(row, {
+      min: 0, max: 100, value: def, defaultValue: def, label: `${ch.name} 음량`,
+      onInput: (v) => {
+        ch.volume = v / 100;
+        player.applyMix();
+      },
+    });
     m.addEventListener('click', () => {
       ch.muted = !ch.muted;
       m.setAttribute('aria-pressed', String(ch.muted));
@@ -208,30 +226,27 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
       s.setAttribute('aria-pressed', String(ch.solo));
       player.applyMix();
     });
-    v.addEventListener('input', () => {
-      ch.volume = Number(v.value) / 100;
-      vv.textContent = v.value;
-      player.applyMix();
-    });
   });
 
-  const tempo = $<HTMLInputElement>('.tempo-r');
   const tempoN = $<HTMLInputElement>('.tempo-n');
   const tempoV = $<HTMLSpanElement>('.tempo-v');
   const clampBpm = (b: number) => Math.min(maxBpm, Math.max(minBpm, Math.round(b)));
   const showBpm = (b: number) => {
-    tempo.value = String(b);
     if (document.activeElement !== tempoN) tempoN.value = String(b);
     tempoV.textContent = `${Math.round((b / baseBpm) * 100)}%`;
   };
+  const tempoKnob = mountKnob($('.strip.tempo'), {
+    min: minBpm, max: maxBpm, value: baseBpm, defaultValue: baseBpm, label: '재생 속도 (BPM)',
+    onInput: (v) => showBpm(v),
+    onChange: (v) => setBpm(v),
+  });
   const setBpm = (b: number) => {
     const bpm = clampBpm(b);
+    tempoKnob.value = bpm;
     showBpm(bpm);
     tempoN.value = String(bpm);
     if (Math.abs(player.rate - bpm / baseBpm) > 1e-9) player.setRate(bpm / baseBpm);
   };
-  tempo.addEventListener('input', () => showBpm(Number(tempo.value)));
-  tempo.addEventListener('change', () => setBpm(Number(tempo.value)));
   tempoN.addEventListener('change', () => {
     const v = Number(tempoN.value);
     setBpm(Number.isFinite(v) && tempoN.value.trim() !== '' ? v : player.rate * baseBpm);
@@ -245,24 +260,28 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
   $<HTMLButtonElement>('.tp-reset').addEventListener('click', () => setBpm(baseBpm));
 
   // 메트로놈: 켜기/끄기, 시작 전 카운트, 음량
+  const metroStrip = $<HTMLDivElement>('.strip.metro');
   const mtOn = $<HTMLButtonElement>('.mt-on');
   const mtCi = $<HTMLButtonElement>('.mt-ci');
-  const mtV = $<HTMLInputElement>('.mt-v');
-  const mtVv = $<HTMLSpanElement>('.mt-vv');
+  const mtDef = Math.round(player.metronome.volume * 100);
+  const metroKnob = mountKnob(metroStrip, {
+    min: 0, max: 100, value: mtDef, defaultValue: mtDef, label: '메트로놈 음량',
+    onInput: (v) => {
+      player.metronome.volume = v / 100;
+      player.applyMix();
+    },
+  });
+  metroKnob.setDimmed(!player.metronome.on);
   mtOn.addEventListener('click', () => {
     player.metronome.on = !player.metronome.on;
     mtOn.setAttribute('aria-pressed', String(player.metronome.on));
     mtOn.textContent = player.metronome.on ? 'ON' : 'OFF';
+    metroKnob.setDimmed(!player.metronome.on);
     player.applyMix();
   });
   mtCi.addEventListener('click', () => {
     player.countIn = !player.countIn;
     mtCi.setAttribute('aria-pressed', String(player.countIn));
-  });
-  mtV.addEventListener('input', () => {
-    player.metronome.volume = Number(mtV.value) / 100;
-    mtVv.textContent = mtV.value;
-    player.applyMix();
   });
 
   // 악보의 마디를 누르면 그 마디부터 (지금 위치 이후 처음 나오는 차례로)

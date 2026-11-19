@@ -139,14 +139,26 @@ button[aria-pressed="true"] { background: var(--accent) !important; color: var(-
 .app > .extras { flex: 1 0 auto; min-height: 56px; }
 .ch button { min-width: 36px; height: 34px; font-size: .9rem; }
 
-/* 메트로놈·템포 줄 */
-.ch .mt-on, .ch .mt-ci { min-width: 52px; font-size: .82rem; white-space: nowrap; padding: 0 8px; }
-.ch .mt-on[aria-pressed="true"], .ch .mt-ci[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: transparent; }
-.ch.tempo { flex-wrap: wrap; row-gap: 6px; }
-.ch.tempo .tempo-r { min-width: 120px; }
-.ch.tempo .tempo-n { width: 4.2em; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--card2); color: var(--fg); text-align: center; font-size: 1rem; font-variant-numeric: tabular-nums; }
-.ch.tempo .tempo-v { width: 3.2em; }
-.tempo-sub { flex-basis: 100%; display: flex; align-items: center; gap: 8px; padding-left: 72px; }
-.tempo-l { display: flex; align-items: center; gap: 4px; color: var(--muted); }
-.ch.tempo .tp-reset { font-size: .82rem; padding: 0 10px; margin-left: auto; white-space: nowrap; }
+/* 믹서: 원형 노브 (좌우로 끌어 조절, 위아래로 쓸면 스크롤) */
+.strips { display: grid; grid-template-columns: repeat(auto-fit, minmax(62px, 1fr)); gap: 6px 4px; }
+.strip { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0; }
+.strip .ch-name { width: 100%; text-align: center; font-size: .8rem; }
+.strip-btns { display: flex; gap: 4px; }
+.strip-btns button { min-width: 28px; height: 28px; padding: 0 5px; border-radius: 8px; border: 1px solid var(--line); background: var(--card2); color: var(--fg); font-size: .78rem; cursor: pointer; white-space: nowrap; }
+.strip .ch-m[aria-pressed="true"] { background: #d0453c !important; color: #fff !important; }
+.strip .ch-s[aria-pressed="true"] { background: #d9b33a !important; color: #000 !important; }
+.strip.tempo .tempo-v { width: auto; height: 28px; line-height: 28px; text-align: center; }
+.knob { position: relative; width: 56px; height: 56px; touch-action: pan-y; cursor: ew-resize; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; border-radius: 50%; outline: none; }
+.knob svg { width: 100%; height: 100%; display: block; }
+.knob-track { fill: none; stroke: var(--line); stroke-width: 5; stroke-linecap: round; }
+.knob-arc { fill: none; stroke: var(--accent); stroke-width: 5; stroke-linecap: round; }
+.knob-tick { stroke: var(--fg); stroke-width: 9; stroke-linecap: round; }
+.knob-v { position: absolute; inset: 0; display: grid; place-items: center; font-size: .8rem; font-weight: 700; font-variant-numeric: tabular-nums; pointer-events: none; }
+.knob.active, .knob:focus-visible { background: color-mix(in srgb, var(--accent) 14%, transparent); }
+.knob.dim { opacity: .4; }
+.tempo-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.tempo-row .tempo-l { font-weight: 600; font-size: .85rem; margin-right: auto; }
+.tempo-row button { min-width: 40px; height: 34px; padding: 0 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card2); color: var(--fg); font-size: .85rem; cursor: pointer; white-space: nowrap; }
+.tempo-in { display: flex; align-items: center; gap: 3px; color: var(--muted); }
+.tempo-in .tempo-n { width: 4em; height: 34px; border-radius: 8px; border: 1px solid var(--line); background: var(--card2); color: var(--fg); text-align: center; font-size: 1rem; font-variant-numeric: tabular-nums; }
 .t-time.counting { color: var(--accent); font-weight: 700; }
