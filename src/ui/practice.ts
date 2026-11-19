@@ -4,18 +4,22 @@
 import { Player } from '../audio/player';
 import type { Score } from '../core/types';
 import type { RenderedScore } from '../render/renderScore';
+import type { Timeline } from '../core/timeline';
+
+/** 연습 화면 손잡이: 호출하면 정리, seek로 위치 이동. 위치가 바뀔 때마다 root에 'practice:time'(detail=초) 이벤트 */
+export type PracticeHandle = (() => void) & { seek(t: number): void; timeline: Timeline };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-export function mountPractice(root: HTMLElement, score: Score, rendered: RenderedScore): () => void {
+export function mountPractice(root: HTMLElement, score: Score, rendered: RenderedScore): PracticeHandle {
   const player = new Player(score);
   const tl = player.timeline;
   const baseBpm = Math.round(score.tempos[0]?.bpm ?? 120);
 
   root.innerHTML = `
-    <div class="mixer" hidden>
+    <div class="mixer">
       ${player.channels
         .map(
           (c, i) => `
@@ -35,11 +39,11 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
       </div>
     </div>
     <div class="transport">
-      <button class="t-play" aria-label="재생">▶</button>
+      <button class="t-mix" aria-pressed="true">믹서</button>
       <button class="t-stop" aria-label="처음으로">⏮</button>
       <input class="t-seek" type="range" min="0" max="${Math.ceil(tl.totalTime * 10)}" value="0" aria-label="재생 위치" />
       <span class="t-time">0:00 / ${fmt(tl.totalTime)}</span>
-      <button class="t-mix" aria-pressed="false">믹서</button>
+      <button class="t-play" aria-label="재생">▶</button>
     </div>
     <p class="t-status" hidden></p>`;
 
@@ -79,6 +83,7 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
   }
 
   function drawCursor(t: number) {
+    root.dispatchEvent(new CustomEvent('practice:time', { detail: t }));
     if (!tl.measures.length) return;
     const pm = locate(t);
     const box = rendered.measureBoxes[pm.measure];
@@ -111,11 +116,14 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
     c.hl.setAttribute('width', String(box.width));
     c.hl.setAttribute('height', String(box.bottom - box.top));
     if (box.system !== lastSystem && player.playing) {
+      // 악보 칸(스크롤 프레임) 안에서 지금 줄이 보이도록 넘긴다
       const svg = rendered.systems[box.system];
-      const r = svg.getBoundingClientRect();
-      const barH = root.getBoundingClientRect().height;
-      if (r.top < 60 || r.bottom > window.innerHeight - barH - 10) {
-        window.scrollBy({ top: r.top - 80, behavior: 'smooth' });
+      const frame = svg.closest<HTMLElement>('.stage');
+      const target = svg.closest<HTMLElement>('.system') ?? svg;
+      const r = target.getBoundingClientRect();
+      const f = frame?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+      if (r.top < f.top + 8 || r.bottom > f.bottom - 8) {
+        (frame ?? window).scrollBy({ top: r.top - f.top, behavior: 'smooth' });
       }
     }
     lastSystem = box.system;
@@ -213,8 +221,15 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
   });
 
   drawCursor(0);
-  return () => {
+  const unmount = () => {
     player.pause();
     cancelAnimationFrame(raf);
   };
+  return Object.assign(unmount, {
+    seek(t: number) {
+      player.seek(t);
+      drawCursor(t);
+    },
+    timeline: tl,
+  });
 }
