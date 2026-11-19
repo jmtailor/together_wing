@@ -131,6 +131,12 @@ export interface Part {
 export interface Score {
   title: string;
   composer: string;
+  /** 작사 (MuseScore 메타 lyricist) */
+  lyricist: string;
+  /** 편곡 (MuseScore 메타 arranger) */
+  arranger: string;
+  /** 레퍼런스 버전: 제목 글상자의 꺾쇠·괄호 안 글자 (예: 일어나<알바스찬> → 알바스찬) */
+  reference: string;
   museScoreVersion: string;
   programVersion: string;
   division: Ticks;

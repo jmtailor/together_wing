@@ -15,7 +15,7 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
   const baseBpm = Math.round(score.tempos[0]?.bpm ?? 120);
 
   root.innerHTML = `
-    <div class="mixer" hidden>
+    <div class="mixer">
       ${player.channels
         .map(
           (c, i) => `
@@ -39,7 +39,7 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
       <button class="t-stop" aria-label="처음으로">⏮</button>
       <input class="t-seek" type="range" min="0" max="${Math.ceil(tl.totalTime * 10)}" value="0" aria-label="재생 위치" />
       <span class="t-time">0:00 / ${fmt(tl.totalTime)}</span>
-      <button class="t-mix" aria-pressed="false">믹서</button>
+      <button class="t-mix" aria-pressed="true">믹서</button>
     </div>
     <p class="t-status" hidden></p>`;
 
@@ -114,10 +114,11 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
       // 악보 칸(스크롤 프레임) 안에서 지금 줄이 보이도록 넘긴다
       const svg = rendered.systems[box.system];
       const frame = svg.closest<HTMLElement>('.stage');
-      const r = svg.getBoundingClientRect();
+      const target = svg.closest<HTMLElement>('.system') ?? svg;
+      const r = target.getBoundingClientRect();
       const f = frame?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
       if (r.top < f.top + 8 || r.bottom > f.bottom - 8) {
-        (frame ?? window).scrollBy({ top: r.top - f.top - 12, behavior: 'smooth' });
+        (frame ?? window).scrollBy({ top: r.top - f.top, behavior: 'smooth' });
       }
     }
     lastSystem = box.system;

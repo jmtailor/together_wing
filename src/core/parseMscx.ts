@@ -384,10 +384,15 @@ export function parseMscx(text: string): Score {
 
   notes.sort((a, b) => a.tick - b.tick || a.staff - b.staff || a.voice - b.voice || a.pitch - b.pitch);
 
-  const title = meta.get('workTitle') || richText(findTitleText(staffEls[0])) || '';
+  const frameTitle = richText(findTitleText(staffEls[0])) || '';
+  const title = meta.get('workTitle') || frameTitle;
+  const refMatch = frameTitle.match(/[<(\[]\s*([^<>()\[\]]+?)\s*[>)\]]\s*$/);
   return {
     title,
     composer: meta.get('composer') ?? '',
+    lyricist: meta.get('lyricist') ?? '',
+    arranger: meta.get('arranger') ?? '',
+    reference: refMatch ? refMatch[1] : '',
     museScoreVersion: root.getAttribute('version') ?? '',
     programVersion: childText(root, 'programVersion') ?? '',
     division,
