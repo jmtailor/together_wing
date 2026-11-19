@@ -111,11 +111,13 @@ export function mountPractice(root: HTMLElement, score: Score, rendered: Rendere
     c.hl.setAttribute('width', String(box.width));
     c.hl.setAttribute('height', String(box.bottom - box.top));
     if (box.system !== lastSystem && player.playing) {
+      // 악보 칸(스크롤 프레임) 안에서 지금 줄이 보이도록 넘긴다
       const svg = rendered.systems[box.system];
+      const frame = svg.closest<HTMLElement>('.stage');
       const r = svg.getBoundingClientRect();
-      const barH = root.getBoundingClientRect().height;
-      if (r.top < 60 || r.bottom > window.innerHeight - barH - 10) {
-        window.scrollBy({ top: r.top - 80, behavior: 'smooth' });
+      const f = frame?.getBoundingClientRect() ?? { top: 0, bottom: window.innerHeight };
+      if (r.top < f.top + 8 || r.bottom > f.bottom - 8) {
+        (frame ?? window).scrollBy({ top: r.top - f.top - 12, behavior: 'smooth' });
       }
     }
     lastSystem = box.system;
